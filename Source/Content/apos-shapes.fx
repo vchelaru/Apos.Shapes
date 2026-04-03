@@ -442,19 +442,11 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float sdfSize = p.Meta1.z;
     float lineSize = p.Meta1.x;
 
-    float2 fillR = Unpair(p.Fill.r) / 255.0;
-    float2 fillG = Unpair(p.Fill.g) / 255.0;
-    float2 fillB = Unpair(p.Fill.b) / 255.0;
-    float2 fillA = Unpair(p.Fill.a) / 255.0;
-    float4 fill1 = float4(fillR.x, fillG.x, fillB.x, fillA.x);
-    float4 fill2 = float4(fillR.y, fillG.y, fillB.y, fillA.y);
+    float4 fill1 = float4(Unpair(p.Fill.x), Unpair(p.Fill.y)) / 255.0;
+    float4 fill2 = float4(Unpair(p.Fill.z), Unpair(p.Fill.w)) / 255.0;
 
-    float2 borderR = Unpair(p.Border.r) / 255.0;
-    float2 borderG = Unpair(p.Border.g) / 255.0;
-    float2 borderB = Unpair(p.Border.b) / 255.0;
-    float2 borderA = Unpair(p.Border.a) / 255.0;
-    float4 border1 = float4(borderR.x, borderG.x, borderB.x, borderA.x);
-    float4 border2 = float4(borderR.y, borderG.y, borderB.y, borderA.y);
+    float4 border1 = float4(Unpair(p.Border.x), Unpair(p.Border.y)) / 255.0;
+    float4 border2 = float4(Unpair(p.Border.z), Unpair(p.Border.w)) / 255.0;
 
     float d;
     if (p.Meta1.y < 0.5) {

@@ -42,7 +42,7 @@ namespace Apos.Shapes {
         readonly VertexDeclaration IVertexType.VertexDeclaration => VertexDeclaration;
 
         public override readonly int GetHashCode() {
-            return System.HashCode.Combine(Position, TextureCoordinate, Fill, Border, System.HashCode.Combine(FillCoord, BorderCoord, Meta1, Meta2, Meta3, Meta4));
+            return HashCode.Combine(Position, TextureCoordinate, Fill, Border, HashCode.Combine(FillCoord, BorderCoord, Meta1, Meta2, Meta3, Meta4));
         }
 
         public override readonly string ToString() {
@@ -112,7 +112,7 @@ namespace Apos.Shapes {
             value += offset;
             return old;
         }
-        private static readonly Dictionary<VertexElementFormat, int> Offsets = new Dictionary<VertexElementFormat, int>() {
+        private static readonly Dictionary<VertexElementFormat, int> Offsets = new() {
             [VertexElementFormat.Single] = 4,
             [VertexElementFormat.Vector2] = 8,
             [VertexElementFormat.Vector3] = 12,
@@ -128,7 +128,7 @@ namespace Apos.Shapes {
         };
 
         private static Vector4 PairColors(Color a, Color b) {
-            return new Vector4(Pair(a.R, b.R), Pair(a.G, b.G), Pair(a.B, b.B), Pair(a.A, b.A));
+            return new Vector4(Pair(a.R, a.G), Pair(a.B, a.A), Pair(b.R, b.G), Pair(b.B, b.A));
         }
 
         private static int Pair(int a, int b) {
