@@ -23,7 +23,6 @@ struct VertexInput {
     float4 Meta1 : TEXCOORD5;
     float4 Meta2 : TEXCOORD6;
     float4 Meta3 : TEXCOORD7;
-    float4 Meta4 : TEXCOORD8;
 };
 struct PixelInput {
     float4 Position : SV_Position0;
@@ -35,7 +34,6 @@ struct PixelInput {
     float4 Meta1 : TEXCOORD5;
     float4 Meta2 : TEXCOORD6;
     float4 Meta3 : TEXCOORD7;
-    float4 Meta4 : TEXCOORD8;
 };
 
 // https://iquilezles.org/www/articles/distfunctions2d/distfunctions2d.htm
@@ -433,14 +431,15 @@ PixelInput SpriteVertexShader(VertexInput v) {
     output.Meta1 = v.Meta1;
     output.Meta2 = v.Meta2;
     output.Meta3 = v.Meta3;
-    output.Meta4 = v.Meta4;
     return output;
 }
 float4 SpritePixelShader(PixelInput p) : SV_TARGET {
-    float ps = p.Meta2.x;
-    float aaSize = ps * p.Meta2.y;
-    float sdfSize = p.Meta1.z;
     float lineSize = p.Meta1.x;
+    float aaSize = p.Meta1.y;
+    float sdfSize = p.Meta1.z;
+
+    float2 meta = Unpair(p.TexCoord.w);
+    float shape = meta.x;
 
     float4 fill1 = float4(Unpair(p.Fill.x), Unpair(p.Fill.y)) / 255.0;
     float4 fill2 = float4(Unpair(p.Fill.z), Unpair(p.Fill.w)) / 255.0;
@@ -449,38 +448,38 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float4 border2 = float4(Unpair(p.Border.z), Unpair(p.Border.w)) / 255.0;
 
     float d;
-    if (p.Meta1.y < 0.5) {
+    if (shape < 0.5) {
         d = CircleSDF(p.TexCoord.xy, sdfSize);
-    } else if (p.Meta1.y < 1.5) {
+    } else if (shape < 1.5) {
         d = BoxSDF(p.TexCoord.xy, float2(sdfSize, p.Meta1.w));
-    } else if (p.Meta1.y < 2.5) {
+    } else if (shape < 2.5) {
         d = SegmentSDF(p.TexCoord.xy, float2(0.0, 0.0), float2(p.Meta1.w, 0.0));
-    } else if (p.Meta1.y < 3.5) {
+    } else if (shape < 3.5) {
         d = HexagonSDF(p.TexCoord.xy, sdfSize);
-    } else if (p.Meta1.y < 4.5) {
+    } else if (shape < 4.5) {
         d = EquilateralTriangleSDF(p.TexCoord.xy, sdfSize);
-    } else if (p.Meta1.y < 5.5) {
-        d = TriangleSDF(p.TexCoord.xy, p.Meta1.zw, p.Meta3.xy, p.Meta3.zw);
-    } else if (p.Meta1.y < 6.5) {
+    } else if (shape < 5.5) {
+        d = TriangleSDF(p.TexCoord.xy, p.Meta1.zw, p.Meta2.xy, p.Meta2.zw);
+    } else if (shape < 6.5) {
         d = EllipseSDF(p.TexCoord.xy, float2(sdfSize, p.Meta1.w));
-    } else if (p.Meta1.y < 7.5) {
-        d = ArcSDF(p.TexCoord.xy, p.Meta3.xy, sdfSize, p.Meta3.z);
-    } else if (p.Meta1.y < 8.5) {
-        d = RingSDF(p.TexCoord.xy, p.Meta3.xy, sdfSize, p.Meta3.z);
-    } else if (p.Meta1.y < 9.5) {
+    } else if (shape < 7.5) {
+        d = ArcSDF(p.TexCoord.xy, p.Meta2.xy, sdfSize, p.Meta2.z);
+    } else if (shape < 8.5) {
+        d = RingSDF(p.TexCoord.xy, p.Meta2.xy, sdfSize, p.Meta2.z);
+    } else if (shape < 9.5) {
         return tex2D(TextureSampler, p.TexCoord.xy) * fill1;
-    } else if (p.Meta1.y < 10.5) {
+    } else if (shape < 10.5) {
         return tex2D(FontSampler, p.TexCoord.xy) * fill1;
     }
 
-    d -= p.Meta2.z;
+    d -= p.TexCoord.z;
 
-    float2 gradientStyles = Unpair(p.Meta2.w);
+    float2 gradientStyles = Unpair(meta.y);
     float2 fillStyles = Unpair(gradientStyles.x);
     float2 borderStyles = Unpair(gradientStyles.y);
 
-    float4 fc = lerp(RgbToOklab(fill1), RgbToOklab(fill2), Gradient(fillStyles, p.FillCoord, p.TexCoord.xy, d, aaSize, p.Meta4.xy));
-    float4 bc = lerp(RgbToOklab(border1), RgbToOklab(border2), Gradient(borderStyles, p.BorderCoord, p.TexCoord.xy, d, aaSize, p.Meta4.zw));
+    float4 fc = lerp(RgbToOklab(fill1), RgbToOklab(fill2), Gradient(fillStyles, p.FillCoord, p.TexCoord.xy, d, aaSize, p.Meta3.xy));
+    float4 bc = lerp(RgbToOklab(border1), RgbToOklab(border2), Gradient(borderStyles, p.BorderCoord, p.TexCoord.xy, d, aaSize, p.Meta3.zw));
     bc = lerp(bc, float4(bc.rgb, 0.0), smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.TexCoord.xy, d - aaSize, aaSize, float2(0.0, 0.0))));
 
     float4 result = OkLabToRgb(lerp(fc, bc, smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.TexCoord.xy, d + lineSize, aaSize, float2(0.0, 0.0)))));

@@ -7,28 +7,27 @@ using Microsoft.Xna.Framework.Graphics;
 namespace Apos.Shapes {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct VertexShape : IVertexType {
-        public VertexShape(Vector3 position, Vector2 textureCoordinate, float shape, Gradient fill, Gradient border, float thickness, float sdfSize, float pixelSize, float height = 1.0f, float aaSize = 2f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f) {
+        public VertexShape(Vector3 position, Vector2 textureCoordinate, Shape shape, Gradient fill, Gradient border, float thickness, float sdfSize, float pixelSize, float height = 1.0f, float aaSize = 2f, float rounded = 0f, float a = 0f, float b = 0f, float c = 0f, float d = 0f) {
             if (thickness <= 0f) {
                 border = fill;
                 thickness = 0f;
             }
 
             Position = position;
-            TextureCoordinate = textureCoordinate;
+            TextureCoordinate = new Vector4(textureCoordinate, rounded, Pair((int)shape, Pair(Pair((int)fill.S, (int)fill.RS), Pair((int)border.S, (int)border.RS))));
             Fill = PairColors(fill.AC, fill.BC);
             Border = PairColors(border.AC, border.BC);
 
             FillCoord = new Vector4(fill.AXY.X, fill.AXY.Y, fill.BXY.X, fill.BXY.Y);
             BorderCoord = new Vector4(border.AXY.X, border.AXY.Y, border.BXY.X, border.BXY.Y);
 
-            Meta1 = new Vector4(thickness, shape, sdfSize, height);
-            Meta2 = new Vector4(pixelSize, aaSize, rounded, Pair(Pair((int)fill.S, (int)fill.RS), Pair((int)border.S, (int)border.RS)));
-            Meta3 = new Vector4(a, b, c, d);
-            Meta4 = new Vector4(fill.AOffset, fill.BOffset, border.AOffset, border.BOffset);
+            Meta1 = new Vector4(thickness, pixelSize * aaSize, sdfSize, height);
+            Meta2 = new Vector4(a, b, c, d);
+            Meta3 = new Vector4(fill.AOffset, fill.BOffset, border.AOffset, border.BOffset);
         }
 
         public Vector3 Position;
-        public Vector2 TextureCoordinate;
+        public Vector4 TextureCoordinate;
         public Vector4 Fill;
         public Vector4 Border;
         public Vector4 FillCoord;
@@ -36,13 +35,12 @@ namespace Apos.Shapes {
         public Vector4 Meta1;
         public Vector4 Meta2;
         public Vector4 Meta3;
-        public Vector4 Meta4;
         public static readonly VertexDeclaration VertexDeclaration;
 
         readonly VertexDeclaration IVertexType.VertexDeclaration => VertexDeclaration;
 
         public override readonly int GetHashCode() {
-            return HashCode.Combine(Position, TextureCoordinate, Fill, Border, HashCode.Combine(FillCoord, BorderCoord, Meta1, Meta2, Meta3, Meta4));
+            return HashCode.Combine(Position, TextureCoordinate, Fill, Border, HashCode.Combine(FillCoord, BorderCoord, Meta1, Meta2, Meta3));
         }
 
         public override readonly string ToString() {
@@ -70,8 +68,7 @@ namespace Apos.Shapes {
                 left.BorderCoord == right.BorderCoord &&
                 left.Meta1 == right.Meta1 &&
                 left.Meta2 == right.Meta2 &&
-                left.Meta3 == right.Meta3 &&
-                left.Meta4 == right.Meta4;
+                left.Meta3 == right.Meta3;
         }
 
         public static bool operator !=(VertexShape left, VertexShape right) {
@@ -88,19 +85,32 @@ namespace Apos.Shapes {
             return this == ((VertexShape)obj);
         }
 
+        public enum Shape {
+            Circle = 0,
+            Rectangle = 1,
+            Line = 2,
+            Hexagon = 3,
+            EquilateralTriangle = 4,
+            Triangle = 5,
+            Ellipse = 6,
+            Arc = 7,
+            Ring = 8,
+            Texture = 9,
+            String = 10
+        }
+
         static VertexShape() {
             int offset = 0;
             var elements = new VertexElement[] {
                 GetVertexElement(ref offset, VertexElementFormat.Vector3, VertexElementUsage.Position, 0),
-                GetVertexElement(ref offset, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 0),
+                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 0),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 1),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 2),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 3),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 4),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 5),
                 GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 6),
-                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 7),
-                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 8),
+                GetVertexElement(ref offset, VertexElementFormat.Vector4, VertexElementUsage.TextureCoordinate, 7)
             };
             VertexDeclaration = new VertexDeclaration(elements);
         }
