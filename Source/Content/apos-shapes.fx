@@ -34,6 +34,7 @@ struct PixelInput {
     float4 Meta1 : TEXCOORD5;
     float4 Meta2 : TEXCOORD6;
     float4 Meta3 : TEXCOORD7;
+    float4 Pos : TEXCOORD8;
 };
 
 // https://iquilezles.org/www/articles/distfunctions2d/distfunctions2d.htm
@@ -431,6 +432,7 @@ PixelInput SpriteVertexShader(VertexInput v) {
     output.Meta1 = v.Meta1;
     output.Meta2 = v.Meta2;
     output.Meta3 = v.Meta3;
+    output.Pos = v.Position;
     return output;
 }
 float4 SpritePixelShader(PixelInput p) : SV_TARGET {
@@ -478,11 +480,11 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float2 fillStyles = Unpair(gradientStyles.x);
     float2 borderStyles = Unpair(gradientStyles.y);
 
-    float4 fc = lerp(RgbToOklab(fill1), RgbToOklab(fill2), Gradient(fillStyles, p.FillCoord, p.TexCoord.xy, d, aaSize, p.Meta3.xy));
-    float4 bc = lerp(RgbToOklab(border1), RgbToOklab(border2), Gradient(borderStyles, p.BorderCoord, p.TexCoord.xy, d, aaSize, p.Meta3.zw));
-    bc = lerp(bc, float4(bc.rgb, 0.0), smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.TexCoord.xy, d - aaSize, aaSize, float2(0.0, 0.0))));
+    float4 fc = lerp(RgbToOklab(fill1), RgbToOklab(fill2), Gradient(fillStyles, p.FillCoord, p.Pos.xy, d, aaSize, p.Meta3.xy));
+    float4 bc = lerp(RgbToOklab(border1), RgbToOklab(border2), Gradient(borderStyles, p.BorderCoord, p.Pos.xy, d, aaSize, p.Meta3.zw));
+    bc = lerp(bc, float4(bc.rgb, 0.0), smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d - aaSize, aaSize, float2(0.0, 0.0))));
 
-    float4 result = OkLabToRgb(lerp(fc, bc, smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.TexCoord.xy, d + lineSize, aaSize, float2(0.0, 0.0)))));
+    float4 result = OkLabToRgb(lerp(fc, bc, smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d + lineSize, aaSize, float2(0.0, 0.0)))));
     result.rgb *= result.a;
 
     return result;

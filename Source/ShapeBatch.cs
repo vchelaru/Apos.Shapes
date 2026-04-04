@@ -54,7 +54,7 @@ namespace Apos.Shapes {
             _depthStencilState = depthStencilState ?? DepthStencilState.None;
             _rasterizerState = rasterizerState ?? RasterizerState.CullCounterClockwise;
         }
-        public void DrawCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
+        public void DrawCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
@@ -66,7 +66,14 @@ namespace Apos.Shapes {
             var bottomRight = center + new Vector2(radius1);
             var bottomLeft = center + new Vector2(-radius1, radius1);
 
-            GradientToLocalSpace(ref fill, ref border, center, 0f);
+            if (rotation != 0f) {
+                topLeft = Rotate(topLeft, center, rotation);
+                topRight = Rotate(topRight, center, rotation);
+                bottomRight = Rotate(bottomRight, center, rotation);
+                bottomLeft = Rotate(bottomLeft, center, rotation);
+            }
+
+            GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, _pixelSize, aaSize: aaSize);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius1, -radius1), VertexShape.Shape.Circle, fill, border, thickness, radius, _pixelSize, aaSize: aaSize);
@@ -77,26 +84,26 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawCircle(Vector2 center, float radius, Gradient fill, Color border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, aaSize);
+        public void DrawCircle(Vector2 center, float radius, Gradient fill, Color border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
+            DrawCircle(center, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rotation, aaSize);
         }
-        public void DrawCircle(Vector2 center, float radius, Color fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, aaSize);
+        public void DrawCircle(Vector2 center, float radius, Color fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
+            DrawCircle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rotation, aaSize);
         }
-        public void DrawCircle(Vector2 center, float radius, Color fill, Color border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero,  border, Gradient.Shape.None), thickness, aaSize);
+        public void DrawCircle(Vector2 center, float radius, Color fill, Color border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
+            DrawCircle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero,  border, Gradient.Shape.None), thickness, rotation, aaSize);
         }
-        public void FillCircle(Vector2 center, float radius, Color c, float aaSize = 1.5f) {
-            DrawCircle(center, radius, c, c, 0f, aaSize);
+        public void FillCircle(Vector2 center, float radius, Color c, float rotation = 0f, float aaSize = 1.5f) {
+            DrawCircle(center, radius, c, c, 0f, rotation, aaSize);
         }
-        public void FillCircle(Vector2 center, float radius, Gradient g, float aaSize = 1.5f) {
-            DrawCircle(center, radius, g, g, 0f, aaSize);
+        public void FillCircle(Vector2 center, float radius, Gradient g, float rotation = 0f, float aaSize = 1.5f) {
+            DrawCircle(center, radius, g, g, 0f, rotation, aaSize);
         }
-        public void BorderCircle(Vector2 center, float radius, Color c, float thickness = 1f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, Color.Transparent, c, thickness, aaSize);
+        public void BorderCircle(Vector2 center, float radius, Color c, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
+            DrawCircle(center, radius, Color.Transparent, c, thickness, rotation, aaSize);
         }
-        public void BorderCircle(Vector2 center, float radius, Gradient g, float thickness = 1f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, new Gradient(Vector2.Zero, Color.Transparent, Vector2.Zero, Color.Transparent, Gradient.Shape.None), g, thickness, aaSize);
+        public void BorderCircle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
+            DrawCircle(center, radius, new Gradient(Vector2.Zero, Color.Transparent, Vector2.Zero, Color.Transparent, Gradient.Shape.None), g, thickness, rotation, aaSize);
         }
 
         public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
@@ -106,19 +113,19 @@ namespace Apos.Shapes {
             rounded = MathF.Min(MathF.Min(rounded, size.X / 2f), size.Y / 2f);
 
             float aaOffset = _pixelSize * aaSize;
-            xy -= new Vector2(aaOffset); // Account for AA.
+            Vector2 xy1 = xy - new Vector2(aaOffset); // Account for AA.
             Vector2 size1 = size + new Vector2(aaOffset * 2f); // Account for AA.
             Vector2 half = size / 2f;
             Vector2 half1 = half + new Vector2(aaOffset); // Account for AA.
 
             half -= new Vector2(rounded);
 
-            var topLeft = xy;
-            var topRight = xy + new Vector2(size1.X, 0);
-            var bottomRight = xy + size1;
-            var bottomLeft = xy + new Vector2(0, size1.Y);
+            var topLeft = xy1;
+            var topRight = xy1 + new Vector2(size1.X, 0);
+            var bottomRight = xy1 + size1;
+            var bottomLeft = xy1 + new Vector2(0, size1.Y);
 
-            Vector2 center = xy + half1;
+            Vector2 center = xy1 + half1;
             if (rotation != 0f) {
                 topLeft = Rotate(topLeft, center, rotation);
                 topRight = Rotate(topRight, center, rotation);
@@ -126,7 +133,7 @@ namespace Apos.Shapes {
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
 
-            GradientToLocalSpace(ref fill, ref border, center, rotation);
+            GradientToWorld(ref fill, ref border, xy + half, -half, rotation);
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(half1.X, -half1.Y), VertexShape.Shape.Rectangle, fill, border, thickness, half.X, _pixelSize, half.Y, aaSize: aaSize, rounded: rounded);
@@ -182,7 +189,7 @@ namespace Apos.Shapes {
             var width = Vector2.Distance(a, b);
             var width1 = width + radius1; // Account for AA.
 
-            if (!fill.IsLocal || !border.IsLocal) GradientToLocalSpace(ref fill, ref border, a, MathF.Atan2(b.Y - a.Y, b.X - a.X));
+            GradientToWorld(ref fill, ref border, a, Vector2.Zero, MathF.Atan2(b.Y - a.Y, b.X - a.X));
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(width1, -radius1), VertexShape.Shape.Line, fill, border, thickness, radius, _pixelSize, width, aaSize: aaSize, rounded: radius);
@@ -241,7 +248,7 @@ namespace Apos.Shapes {
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
 
-            GradientToLocalSpace(ref fill, ref border, center, rotation);
+            GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, rounded: rounded);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(size.X, -size.Y), VertexShape.Shape.Hexagon, fill, border, thickness, radius, _pixelSize, aaSize: aaSize, rounded: rounded);
@@ -305,7 +312,7 @@ namespace Apos.Shapes {
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
 
-            GradientToLocalSpace(ref fill, ref border, center, rotation);
+            GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(halfWidth1, -incircle1), VertexShape.Shape.EquilateralTriangle, fill, border, thickness, halfWidth, _pixelSize, aaSize: aaSize, rounded: rounded);
@@ -342,9 +349,7 @@ namespace Apos.Shapes {
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
-            if (fill.IsLocal || border.IsLocal) {
-                GradientToWorldSpace(ref fill, ref border, a, MathF.Atan2(b.Y - a.Y, b.X - a.X));
-            }
+            GradientToWorld(ref fill, ref border, a, Vector2.Zero, MathF.Atan2(b.Y - a.Y, b.X - a.X));
 
             float aaOffset = _pixelSize * aaSize;
             float winding = (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
@@ -454,7 +459,7 @@ namespace Apos.Shapes {
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
 
-            GradientToLocalSpace(ref fill, ref border, center, rotation);
+            GradientToWorld(ref fill, ref border, center, Vector2.Zero, rotation);
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius4), VertexShape.Shape.Ellipse, fill, border, thickness, radius1, _pixelSize, radius2, aaSize: aaSize);
@@ -505,7 +510,7 @@ namespace Apos.Shapes {
             var bottomRight = center + new Vector2(radius3);
             var bottomLeft = center + new Vector2(-radius3, radius3);
 
-            float rotation = (angle1 + angle2) * 0.5f - MathF.PI * 0.5f;
+            float rotation = (angle1 + angle2 - MathF.PI) * 0.5f;
 
             if (rotation != 0f) {
                 topLeft = Rotate(topLeft, center, rotation);
@@ -514,8 +519,7 @@ namespace Apos.Shapes {
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
 
-            GradientToLocalSpace(ref fill, ref border, center, rotation);
-            GradientToWorldSpace(ref fill, ref border, new Vector2(0, 0), -rotation);
+            GradientToWorld(ref fill, ref border, center, Vector2.Zero, angle1);
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), VertexShape.Shape.Arc, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: sin, b: cos, c: radius2);
@@ -567,7 +571,7 @@ namespace Apos.Shapes {
             var bottomRight = center + new Vector2(radius3);
             var bottomLeft = center + new Vector2(-radius3, radius3);
 
-            float rotation = (angle1 + angle2) * 0.5f - MathF.PI * 0.5f;
+            float rotation = (angle1 + angle2 - MathF.PI) * 0.5f;
 
             if (rotation != 0f) {
                 topLeft = Rotate(topLeft, center, rotation);
@@ -576,8 +580,7 @@ namespace Apos.Shapes {
                 bottomLeft = Rotate(bottomLeft, center, rotation);
             }
 
-            GradientToLocalSpace(ref fill, ref border, center, rotation);
-            GradientToWorldSpace(ref fill, ref border, new Vector2(0, 0), -rotation);
+            GradientToWorld(ref fill, ref border, center, Vector2.Zero, angle1);
 
             _vertices[_vertexCount + 0] = new VertexShape(new Vector3(topLeft, 0), new Vector2(-radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2);
             _vertices[_vertexCount + 1] = new VertexShape(new Vector3(topRight, 0), new Vector2(radius3, -radius3), VertexShape.Shape.Ring, fill, border, thickness, radius1, _pixelSize, aaSize: aaSize, a: cos, b: sin, c: radius2);
@@ -828,27 +831,16 @@ namespace Apos.Shapes {
         private static float Mod(float x, float m) {
             return (x % m + m) % m;
         }
-        private static void GradientToLocalSpace(ref Gradient g1, ref Gradient g2, Vector2 offset, float rotation) {
-            if (!g1.IsLocal) GradientToLocalSpace(ref g1, offset, rotation);
-            if (!g2.IsLocal) GradientToLocalSpace(ref g2, offset, rotation);
+        private static void GradientToWorld(ref Gradient g1, ref Gradient g2, Vector2 center, Vector2 offset, float rotation) {
+            if (g1.IsLocal) GradientToWorld(ref g1, center, offset, rotation);
+            if (g2.IsLocal) GradientToWorld(ref g2, center, offset, rotation);
         }
-        private static void GradientToLocalSpace(ref Gradient g, Vector2 offset, float rotation) {
-            g.AXY = Rotate(g.AXY, offset, -rotation);
-            g.BXY = Rotate(g.BXY, offset, -rotation);
+        private static void GradientToWorld(ref Gradient g, Vector2 center, Vector2 offset, float rotation) {
+            g.AXY = Rotate(g.AXY + offset, Vector2.Zero, rotation);
+            g.BXY = Rotate(g.BXY + offset, Vector2.Zero, rotation);
 
-            g.AXY -= offset;
-            g.BXY -= offset;
-        }
-        private static void GradientToWorldSpace(ref Gradient g1, ref Gradient g2, Vector2 offset, float rotation) {
-            if (g1.IsLocal) GradientToWorldSpace(ref g1, offset, rotation);
-            if (g2.IsLocal) GradientToWorldSpace(ref g2, offset, rotation);
-        }
-        private static void GradientToWorldSpace(ref Gradient g, Vector2 offset, float rotation) {
-            g.AXY += offset;
-            g.BXY += offset;
-
-            g.AXY = Rotate(g.AXY, offset, rotation);
-            g.BXY = Rotate(g.BXY, offset, rotation);
+            g.AXY += center;
+            g.BXY += center;
         }
 
         private static Vector2 GetUV(Texture2D texture, Vector2 xy) {
