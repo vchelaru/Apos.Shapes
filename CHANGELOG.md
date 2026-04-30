@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Added
+
+- Dashed outlines for `DrawLine`, `DrawCircle`, `DrawRectangle`, `DrawHexagon`, `DrawEquilateralTriangle`, and `DrawTriangle` (including their `Border*` variants). Pass an optional `DashPattern` with `dashLength`, `gapLength`, and an optional `phaseOffset` to the new `dash:` parameter. By default the pattern is exact and the last dash is clipped wherever it lands (Skia-style seam). Set `fitToPath: true` on the `DashPattern` to uniformly scale the dash and gap so the pattern closes seamlessly on closed shapes (or ends on a full dash for lines). `Ellipse`, `Arc`, and `Ring` aren't dashable yet.
 
 ## [0.6.7] - 2026-02-28
 

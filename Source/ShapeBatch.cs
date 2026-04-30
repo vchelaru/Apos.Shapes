@@ -54,7 +54,11 @@ namespace Apos.Shapes {
             _depthStencilState = depthStencilState ?? DepthStencilState.None;
             _rasterizerState = rasterizerState ?? RasterizerState.CullCounterClockwise;
         }
-        public void DrawCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
+        public void DrawCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            if (dash != null && thickness > 0f) {
+                DrawDashedCircle(center, radius, fill, border, thickness, rotation, aaSize, dash.Value);
+                return;
+            }
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
@@ -84,14 +88,14 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawCircle(Vector2 center, float radius, Gradient fill, Color border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rotation, aaSize);
+        public void DrawCircle(Vector2 center, float radius, Gradient fill, Color border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawCircle(center, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rotation, aaSize, dash);
         }
-        public void DrawCircle(Vector2 center, float radius, Color fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rotation, aaSize);
+        public void DrawCircle(Vector2 center, float radius, Color fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawCircle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rotation, aaSize, dash);
         }
-        public void DrawCircle(Vector2 center, float radius, Color fill, Color border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero,  border, Gradient.Shape.None), thickness, rotation, aaSize);
+        public void DrawCircle(Vector2 center, float radius, Color fill, Color border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawCircle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero,  border, Gradient.Shape.None), thickness, rotation, aaSize, dash);
         }
         public void FillCircle(Vector2 center, float radius, Color c, float rotation = 0f, float aaSize = 1.5f) {
             DrawCircle(center, radius, c, c, 0f, rotation, aaSize);
@@ -99,14 +103,60 @@ namespace Apos.Shapes {
         public void FillCircle(Vector2 center, float radius, Gradient g, float rotation = 0f, float aaSize = 1.5f) {
             DrawCircle(center, radius, g, g, 0f, rotation, aaSize);
         }
-        public void BorderCircle(Vector2 center, float radius, Color c, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, Color.Transparent, c, thickness, rotation, aaSize);
+        public void BorderCircle(Vector2 center, float radius, Color c, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawCircle(center, radius, Color.Transparent, c, thickness, rotation, aaSize, dash);
         }
-        public void BorderCircle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawCircle(center, radius, new Gradient(Vector2.Zero, Color.Transparent, Vector2.Zero, Color.Transparent, Gradient.Shape.None), g, thickness, rotation, aaSize);
+        public void BorderCircle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawCircle(center, radius, new Gradient(Vector2.Zero, Color.Transparent, Vector2.Zero, Color.Transparent, Gradient.Shape.None), g, thickness, rotation, aaSize, dash);
+        }
+        private void DrawDashedCircle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness, float rotation, float aaSize, DashPattern dash) {
+            if (radius <= 0f || dash.Period <= 0f || dash.DashLength <= 0f) return;
+
+            float innerRadius = MathF.Max(radius - thickness, 0f);
+            if (innerRadius > 0f) {
+                DrawCircle(center, innerRadius, fill, fill, 0f, rotation, aaSize, dash: null);
+            }
+
+            GradientToWorld(ref border, center, Vector2.Zero, rotation);
+            border.IsLocal = false;
+
+            float halfT = thickness * 0.5f;
+            float ringRadius = radius - halfT;
+            float circumference = 2f * MathF.PI * radius;
+
+            float dashLen = dash.DashLength;
+            float gapLen = dash.GapLength;
+            float period = dash.Period;
+            if (dash.FitToPath && circumference > 0f) {
+                int n = Math.Max(1, (int)MathF.Round(circumference / period));
+                float scale = circumference / (n * period);
+                dashLen *= scale;
+                gapLen *= scale;
+                period *= scale;
+            }
+
+            float t = -dash.PhaseOffset;
+            while (t >= period) t -= period;
+
+            while (t < circumference) {
+                float dashStart = MathF.Max(t, 0f);
+                float dashEnd = MathF.Min(t + dashLen, circumference);
+                if (dashEnd > dashStart) {
+                    float a1 = rotation + dashStart / radius;
+                    float a2 = rotation + dashEnd / radius;
+                    // +1f cancels the radius1 -= 1f adjustment inside DrawRing so the
+                    // dash ring lines up with where a solid BorderCircle's outline sits.
+                    DrawRing(center, a1, a2, ringRadius + 1f, thickness, border, border, 0f, aaSize);
+                }
+                t += period;
+            }
         }
 
-        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
+        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            if (dash != null && thickness > 0f) {
+                DrawDashedRectangle(xy, size, fill, border, thickness, rounded, rotation, aaSize, dash.Value);
+                return;
+            }
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
@@ -144,14 +194,14 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
+        public void DrawRectangle(Vector2 xy, Vector2 size, Gradient fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawRectangle(xy, size, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize, dash);
         }
-        public void DrawRectangle(Vector2 xy, Vector2 size, Color fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, rotation, aaSize);
+        public void DrawRectangle(Vector2 xy, Vector2 size, Color fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawRectangle(xy, size, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, rotation, aaSize, dash);
         }
-        public void DrawRectangle(Vector2 xy, Vector2 size, Color fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
+        public void DrawRectangle(Vector2 xy, Vector2 size, Color fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawRectangle(xy, size, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize, dash);
         }
         public void FillRectangle(Vector2 xy, Vector2 size, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, g, g, 0f, rounded, rotation, aaSize);
@@ -159,14 +209,177 @@ namespace Apos.Shapes {
         public void FillRectangle(Vector2 xy, Vector2 size, Color c, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawRectangle(xy, size, c, c, 0f, rounded, rotation, aaSize);
         }
-        public void BorderRectangle(Vector2 xy, Vector2 size, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, Color.Transparent, g, thickness, rounded, rotation, aaSize);
+        public void BorderRectangle(Vector2 xy, Vector2 size, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawRectangle(xy, size, Color.Transparent, g, thickness, rounded, rotation, aaSize, dash);
         }
-        public void BorderRectangle(Vector2 xy, Vector2 size, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawRectangle(xy, size, Color.Transparent, c, thickness, rounded, rotation, aaSize);
+        public void BorderRectangle(Vector2 xy, Vector2 size, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawRectangle(xy, size, Color.Transparent, c, thickness, rounded, rotation, aaSize, dash);
+        }
+        private void DrawDashedRectangle(Vector2 xy, Vector2 size, Gradient fill, Gradient border, float thickness, float rounded, float rotation, float aaSize, DashPattern dash) {
+            if (dash.Period <= 0f || dash.DashLength <= 0f) return;
+            if (size.X <= 0f || size.Y <= 0f) return;
+
+            rounded = MathF.Min(MathF.Min(rounded, size.X * 0.5f), size.Y * 0.5f);
+            float halfT = thickness * 0.5f;
+
+            Vector2 rectCenter = xy + size * 0.5f;
+            Vector2 half = size * 0.5f;
+
+            if (fill.IsLocal) GradientToWorld(ref fill, rectCenter, -half, rotation);
+            fill.IsLocal = false;
+            if (border.IsLocal) GradientToWorld(ref border, rectCenter, -half, rotation);
+            border.IsLocal = false;
+
+            Vector2 innerXY = xy + new Vector2(thickness);
+            Vector2 innerSize = size - new Vector2(thickness * 2f);
+            if (innerSize.X > 0f && innerSize.Y > 0f) {
+                float innerRounded = MathF.Max(rounded - thickness, 0f);
+                DrawRectangle(innerXY, innerSize, fill, fill, 0f, innerRounded, rotation, aaSize, dash: null);
+            }
+
+            float straightX = size.X - 2f * rounded;
+            float straightY = size.Y - 2f * rounded;
+            float cornerArc = rounded * MathF.PI * 0.5f;
+            float perimeter = 2f * (straightX + straightY) + 4f * cornerArc;
+            if (perimeter <= 0f) return;
+
+            float ringRadius = MathF.Max(rounded - halfT, 0f);
+
+            float topY = xy.Y;
+            float bottomY = xy.Y + size.Y;
+            float leftX = xy.X;
+            float rightX = xy.X + size.X;
+
+            Vector2 cornerTL = new(leftX + rounded, topY + rounded);
+            Vector2 cornerTR = new(rightX - rounded, topY + rounded);
+            Vector2 cornerBR = new(rightX - rounded, bottomY - rounded);
+            Vector2 cornerBL = new(leftX + rounded, bottomY - rounded);
+
+            float dashLen = dash.DashLength;
+            float gapLen = dash.GapLength;
+            float period = dash.Period;
+            if (dash.FitToPath && perimeter > 0f) {
+                int n = Math.Max(1, (int)MathF.Round(perimeter / period));
+                float scale = perimeter / (n * period);
+                dashLen *= scale;
+                gapLen *= scale;
+                period *= scale;
+            }
+
+            float t = -dash.PhaseOffset;
+            t = ((t % period) + period) % period;
+            t -= period;
+
+            while (t < perimeter) {
+                float dashStart = MathF.Max(t, 0f);
+                float dashEnd = MathF.Min(t + dashLen, perimeter);
+                if (dashEnd > dashStart) {
+                    float segOff = 0f;
+
+                    EmitStripDash(dashStart, dashEnd, segOff, straightX,
+                        new Vector2(leftX + rounded, topY), new Vector2(1f, 0f), new Vector2(0f, 1f),
+                        thickness, border, rectCenter, rotation, aaSize);
+                    segOff += straightX;
+
+                    if (rounded > 0f) {
+                        EmitArcDash(dashStart, dashEnd, segOff, cornerArc,
+                            cornerTR, -MathF.PI * 0.5f, 0f, ringRadius, thickness,
+                            border, rectCenter, rotation, aaSize);
+                    }
+                    segOff += cornerArc;
+
+                    EmitStripDash(dashStart, dashEnd, segOff, straightY,
+                        new Vector2(rightX, topY + rounded), new Vector2(0f, 1f), new Vector2(-1f, 0f),
+                        thickness, border, rectCenter, rotation, aaSize);
+                    segOff += straightY;
+
+                    if (rounded > 0f) {
+                        EmitArcDash(dashStart, dashEnd, segOff, cornerArc,
+                            cornerBR, 0f, MathF.PI * 0.5f, ringRadius, thickness,
+                            border, rectCenter, rotation, aaSize);
+                    }
+                    segOff += cornerArc;
+
+                    EmitStripDash(dashStart, dashEnd, segOff, straightX,
+                        new Vector2(rightX - rounded, bottomY), new Vector2(-1f, 0f), new Vector2(0f, -1f),
+                        thickness, border, rectCenter, rotation, aaSize);
+                    segOff += straightX;
+
+                    if (rounded > 0f) {
+                        EmitArcDash(dashStart, dashEnd, segOff, cornerArc,
+                            cornerBL, MathF.PI * 0.5f, MathF.PI, ringRadius, thickness,
+                            border, rectCenter, rotation, aaSize);
+                    }
+                    segOff += cornerArc;
+
+                    EmitStripDash(dashStart, dashEnd, segOff, straightY,
+                        new Vector2(leftX, bottomY - rounded), new Vector2(0f, -1f), new Vector2(1f, 0f),
+                        thickness, border, rectCenter, rotation, aaSize);
+                    segOff += straightY;
+
+                    if (rounded > 0f) {
+                        EmitArcDash(dashStart, dashEnd, segOff, cornerArc,
+                            cornerTL, MathF.PI, 1.5f * MathF.PI, ringRadius, thickness,
+                            border, rectCenter, rotation, aaSize);
+                    }
+                }
+                t += period;
+            }
+        }
+        private void EmitStripDash(float dashStart, float dashEnd, float segStart, float segLen,
+            Vector2 edgeStartLocal, Vector2 edgeDir, Vector2 inwardPerp,
+            float thickness, Gradient border, Vector2 pivot, float rotation, float aaSize) {
+            if (segLen <= 0f) return;
+            float overlapStart = MathF.Max(dashStart, segStart);
+            float overlapEnd = MathF.Min(dashEnd, segStart + segLen);
+            if (overlapEnd <= overlapStart) return;
+
+            float localStart = overlapStart - segStart;
+            float localEnd = overlapEnd - segStart;
+            float pieceLen = localEnd - localStart;
+
+            Vector2 p1Local = edgeStartLocal + edgeDir * localStart;
+            Vector2 p2Local = edgeStartLocal + edgeDir * localEnd;
+            Vector2 pieceCenterLocal = (p1Local + p2Local) * 0.5f + inwardPerp * (thickness * 0.5f);
+            Vector2 pieceCenterWorld = rotation != 0f ? Rotate(pieceCenterLocal, pivot, rotation) : pieceCenterLocal;
+
+            float edgeAngle = MathF.Atan2(edgeDir.Y, edgeDir.X);
+            Vector2 pieceSize = new(pieceLen, thickness);
+            Vector2 pieceXY = pieceCenterWorld - pieceSize * 0.5f;
+
+            DrawRectangle(pieceXY, pieceSize, border, border, 0f, 0f, edgeAngle + rotation, aaSize, dash: null);
+        }
+        private void EmitArcDash(float dashStart, float dashEnd, float segStart, float segLen,
+            Vector2 arcCenterLocal, float arcStartAngle, float arcEndAngle, float ringRadius, float thickness,
+            Gradient border, Vector2 pivot, float rotation, float aaSize) {
+            if (segLen <= 0f) return;
+            float overlapStart = MathF.Max(dashStart, segStart);
+            float overlapEnd = MathF.Min(dashEnd, segStart + segLen);
+            if (overlapEnd <= overlapStart) return;
+
+            float t1 = (overlapStart - segStart) / segLen;
+            float t2 = (overlapEnd - segStart) / segLen;
+
+            // Take the short way around (matches DrawRing's behavior of drawing the
+            // shorter arc), so the linear interpolation always traces the corner.
+            float angleDelta = arcEndAngle - arcStartAngle;
+            while (angleDelta > MathF.PI) angleDelta -= 2f * MathF.PI;
+            while (angleDelta < -MathF.PI) angleDelta += 2f * MathF.PI;
+
+            float a1 = arcStartAngle + t1 * angleDelta;
+            float a2 = arcStartAngle + t2 * angleDelta;
+
+            Vector2 arcCenterWorld = rotation != 0f ? Rotate(arcCenterLocal, pivot, rotation) : arcCenterLocal;
+            // +1f cancels the radius1 -= 1f adjustment inside DrawRing so the corner ring
+            // lines up with the straight-edge dashes (which go through DrawRectangle).
+            DrawRing(arcCenterWorld, a1 + rotation, a2 + rotation, ringRadius + 1f, thickness, border, border, 0f, aaSize);
         }
 
-        public void DrawLine(Vector2 a, Vector2 b, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
+        public void DrawLine(Vector2 a, Vector2 b, float radius, Gradient fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashPattern? dash = null) {
+            if (dash != null && thickness > 0f) {
+                DrawDashedLine(a, b, border, thickness, aaSize, dash.Value);
+                return;
+            }
             if (a == b) {
                 DrawCircle(a, radius, fill, border, thickness, aaSize);
                 return;
@@ -200,14 +413,14 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawLine(Vector2 a, Vector2 b, float radius, Gradient fill, Color border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawLine(a, b, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, aaSize);
+        public void DrawLine(Vector2 a, Vector2 b, float radius, Gradient fill, Color border, float thickness = 1f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawLine(a, b, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, aaSize, dash);
         }
-        public void DrawLine(Vector2 a, Vector2 b, float radius, Color fill, Gradient border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawLine(a, b, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, aaSize);
+        public void DrawLine(Vector2 a, Vector2 b, float radius, Color fill, Gradient border, float thickness = 1f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawLine(a, b, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, aaSize, dash);
         }
-        public void DrawLine(Vector2 a, Vector2 b, float radius, Color fill, Color border, float thickness = 1f, float aaSize = 1.5f) {
-            DrawLine(a, b, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, aaSize);
+        public void DrawLine(Vector2 a, Vector2 b, float radius, Color fill, Color border, float thickness = 1f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawLine(a, b, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, aaSize, dash);
         }
         public void FillLine(Vector2 a, Vector2 b, float radius, Gradient g, float aaSize = 1.5f) {
             DrawLine(a, b, radius, g, g, 0f, aaSize);
@@ -215,14 +428,61 @@ namespace Apos.Shapes {
         public void FillLine(Vector2 a, Vector2 b, float radius, Color c, float aaSize = 1.5f) {
             DrawLine(a, b, radius, c, c, 0f, aaSize);
         }
-        public void BorderLine(Vector2 a, Vector2 b, float radius, Gradient g, float thickness = 1f, float aaSize = 1.5f) {
-            DrawLine(a, b, radius, Color.Transparent, g, thickness, aaSize);
+        public void BorderLine(Vector2 a, Vector2 b, float radius, Gradient g, float thickness = 1f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawLine(a, b, radius, Color.Transparent, g, thickness, aaSize, dash);
         }
-        public void BorderLine(Vector2 a, Vector2 b, float radius, Color c, float thickness = 1f, float aaSize = 1.5f) {
-            DrawLine(a, b, radius, Color.Transparent, c, thickness, aaSize);
+        public void BorderLine(Vector2 a, Vector2 b, float radius, Color c, float thickness = 1f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawLine(a, b, radius, Color.Transparent, c, thickness, aaSize, dash);
+        }
+        private void DrawDashedLine(Vector2 a, Vector2 b, Gradient border, float thickness, float aaSize, DashPattern dash) {
+            float total = Vector2.Distance(a, b);
+            if (total <= 0f || dash.Period <= 0f || dash.DashLength <= 0f) return;
+
+            float rotation = MathF.Atan2(b.Y - a.Y, b.X - a.X);
+            if (border.IsLocal) GradientToWorld(ref border, a, Vector2.Zero, rotation);
+            border.IsLocal = false;
+
+            Vector2 dir = (b - a) / total;
+            float pieceHeight = thickness;
+
+            // FitToPath on a line: M dashes, M-1 gaps, scaled so the pattern
+            // starts and ends on a full dash.
+            float dashLen = dash.DashLength;
+            float gapLen = dash.GapLength;
+            float period = dash.Period;
+            if (dash.FitToPath) {
+                int m = Math.Max(1, (int)MathF.Round((total + gapLen) / period));
+                float patternLen = m * dashLen + (m - 1) * gapLen;
+                if (patternLen > 0f) {
+                    float scale = total / patternLen;
+                    dashLen *= scale;
+                    gapLen *= scale;
+                    period *= scale;
+                }
+            }
+
+            float t = -dash.PhaseOffset;
+            while (t >= period) t -= period;
+
+            while (t < total) {
+                float dashStart = MathF.Max(t, 0f);
+                float dashEnd = MathF.Min(t + dashLen, total);
+                if (dashEnd > dashStart) {
+                    float pieceLen = dashEnd - dashStart;
+                    Vector2 mid = a + dir * ((dashStart + dashEnd) * 0.5f);
+                    Vector2 pieceSize = new(pieceLen, pieceHeight);
+                    Vector2 pieceXY = mid - pieceSize * 0.5f;
+                    DrawRectangle(pieceXY, pieceSize, border, border, 0f, 0f, rotation, aaSize, dash: null);
+                }
+                t += period;
+            }
         }
 
-        public void DrawHexagon(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f) {
+        public void DrawHexagon(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            if (dash != null && thickness > 0f) {
+                DrawDashedHexagon(center, radius, fill, border, thickness, rounded, rotation, aaSize, dash.Value);
+                return;
+            }
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
@@ -259,14 +519,14 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawHexagon(Vector2 center, float radius, Gradient fill, Color border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f) {
-            DrawHexagon(center, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
+        public void DrawHexagon(Vector2 center, float radius, Gradient fill, Color border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawHexagon(center, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize, dash);
         }
-        public void DrawHexagon(Vector2 center, float radius, Color fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f) {
-            DrawHexagon(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, rotation, aaSize);
+        public void DrawHexagon(Vector2 center, float radius, Color fill, Gradient border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawHexagon(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, rotation, aaSize, dash);
         }
-        public void DrawHexagon(Vector2 center, float radius, Color fill, Color border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f) {
-            DrawHexagon(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
+        public void DrawHexagon(Vector2 center, float radius, Color fill, Color border, float thickness = 1f, float rounded = 0, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawHexagon(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize, dash);
         }
         public void FillHexagon(Vector2 center, float radius, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawHexagon(center, radius, g, g, 0f, rounded, rotation, aaSize);
@@ -274,14 +534,106 @@ namespace Apos.Shapes {
         public void FillHexagon(Vector2 center, float radius, Color c, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawHexagon(center, radius, c, c, 0f, rounded, rotation, aaSize);
         }
-        public void BorderHexagon(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawHexagon(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize);
+        public void BorderHexagon(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawHexagon(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize, dash);
         }
-        public void BorderHexagon(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawHexagon(center, radius, Color.Transparent, c, thickness, rounded, rotation, aaSize);
+        public void BorderHexagon(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawHexagon(center, radius, Color.Transparent, c, thickness, rounded, rotation, aaSize, dash);
+        }
+        private void DrawDashedHexagon(Vector2 center, float apothem, Gradient fill, Gradient border, float thickness, float rounded, float rotation, float aaSize, DashPattern dash) {
+            if (dash.Period <= 0f || dash.DashLength <= 0f || apothem <= 0f) return;
+            rounded = MathF.Max(MathF.Min(rounded, apothem), 0f);
+            float halfT = thickness * 0.5f;
+
+            if (fill.IsLocal) GradientToWorld(ref fill, center, Vector2.Zero, rotation);
+            fill.IsLocal = false;
+            if (border.IsLocal) GradientToWorld(ref border, center, Vector2.Zero, rotation);
+            border.IsLocal = false;
+
+            // Inner fill: shrink the hexagon by `thickness` perpendicular to each edge.
+            float innerApothem = MathF.Max(apothem - thickness, 0f);
+            if (innerApothem > 0f) {
+                float innerRounded = MathF.Max(rounded - thickness, 0f);
+                DrawHexagon(center, innerApothem, fill, fill, 0f, innerRounded, rotation, aaSize, dash: null);
+            }
+
+            // Flat-top hexagon, walking edges clockwise from the top edge.
+            // Edge directions (in unrotated local frame, screen y-down):
+            //   e0 top:           (1, 0)
+            //   e1 top-right:     (1/2,  √3/2)
+            //   e2 bottom-right:  (-1/2, √3/2)
+            //   e3 bottom:        (-1, 0)
+            //   e4 bottom-left:   (-1/2, -√3/2)
+            //   e5 top-left:      (1/2,  -√3/2)
+            // Outward perp = math CW rotation = (dy, -dx).
+            // Shrunken vertex angle θ_k = -60° + k·60° (between edges k and k+1, k=0..5).
+            float sideEff = 2f * (apothem - rounded) / MathF.Sqrt(3f);
+            float cornerArc = rounded * MathF.PI / 3f;
+            float perimeter = 6f * sideEff + 6f * cornerArc;
+            if (perimeter <= 0f) return;
+
+            float ringRadius = MathF.Max(rounded - halfT, 0f);
+            float shrunkenCircumradius = 2f * (apothem - rounded) / MathF.Sqrt(3f);
+
+            float dashLen = dash.DashLength;
+            float gapLen = dash.GapLength;
+            float period = dash.Period;
+            if (dash.FitToPath && perimeter > 0f) {
+                int n = Math.Max(1, (int)MathF.Round(perimeter / period));
+                float scale = perimeter / (n * period);
+                dashLen *= scale;
+                gapLen *= scale;
+                period *= scale;
+            }
+
+            float t = -dash.PhaseOffset;
+            t = ((t % period) + period) % period;
+            t -= period;
+
+            while (t < perimeter) {
+                float dashStart = MathF.Max(t, 0f);
+                float dashEnd = MathF.Min(t + dashLen, perimeter);
+                if (dashEnd > dashStart) {
+                    float segOff = 0f;
+                    for (int k = 0; k < 6; k++) {
+                        float edgeAngle = k * MathF.PI / 3f;
+                        Vector2 dir = new(MathF.Cos(edgeAngle), MathF.Sin(edgeAngle));
+                        Vector2 outwardPerp = new(dir.Y, -dir.X);
+                        Vector2 inwardPerp = -outwardPerp;
+
+                        float midAngle = edgeAngle - MathF.PI * 0.5f;
+                        Vector2 edgeMid = center + new Vector2(MathF.Cos(midAngle) * apothem, MathF.Sin(midAngle) * apothem);
+                        Vector2 edgeStart = edgeMid - dir * (sideEff * 0.5f);
+
+                        EmitStripDash(dashStart, dashEnd, segOff, sideEff,
+                            edgeStart, dir, inwardPerp, thickness, border, center, rotation, aaSize);
+                        segOff += sideEff;
+
+                        if (rounded > 0f) {
+                            float vertexAngle = -MathF.PI / 3f + k * MathF.PI / 3f;
+                            Vector2 cornerCenter = center + new Vector2(
+                                MathF.Cos(vertexAngle) * shrunkenCircumradius,
+                                MathF.Sin(vertexAngle) * shrunkenCircumradius);
+                            float a1 = MathF.Atan2(outwardPerp.Y, outwardPerp.X);
+                            float nextAngle = (k + 1) * MathF.PI / 3f;
+                            Vector2 nextOut = new(MathF.Sin(nextAngle), -MathF.Cos(nextAngle));
+                            float a2 = MathF.Atan2(nextOut.Y, nextOut.X);
+                            EmitArcDash(dashStart, dashEnd, segOff, cornerArc,
+                                cornerCenter, a1, a2, ringRadius, thickness,
+                                border, center, rotation, aaSize);
+                        }
+                        segOff += cornerArc;
+                    }
+                }
+                t += period;
+            }
         }
 
-        public void DrawEquilateralTriangle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
+        public void DrawEquilateralTriangle(Vector2 center, float radius, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            if (dash != null && thickness > 0f) {
+                DrawDashedEquilateralTriangle(center, radius, fill, border, thickness, rounded, rotation, aaSize, dash.Value);
+                return;
+            }
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
@@ -323,14 +675,14 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawEquilateralTriangle(Vector2 center, float radius, Gradient fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEquilateralTriangle(center, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
+        public void DrawEquilateralTriangle(Vector2 center, float radius, Gradient fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawEquilateralTriangle(center, radius, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize, dash);
         }
-        public void DrawEquilateralTriangle(Vector2 center, float radius, Color fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEquilateralTriangle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, rotation, aaSize);
+        public void DrawEquilateralTriangle(Vector2 center, float radius, Color fill, Gradient border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawEquilateralTriangle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, rotation, aaSize, dash);
         }
-        public void DrawEquilateralTriangle(Vector2 center, float radius, Color fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEquilateralTriangle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize);
+        public void DrawEquilateralTriangle(Vector2 center, float radius, Color fill, Color border, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawEquilateralTriangle(center, radius, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, rotation, aaSize, dash);
         }
         public void FillEquilateralTriangle(Vector2 center, float radius, Gradient g, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawEquilateralTriangle(center, radius, g, g, 0f, rounded, rotation, aaSize);
@@ -338,14 +690,116 @@ namespace Apos.Shapes {
         public void FillEquilateralTriangle(Vector2 center, float radius, Color c, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
             DrawEquilateralTriangle(center, radius, c, c, 0f, rounded, rotation, aaSize);
         }
-        public void BorderEquilateralTriangle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEquilateralTriangle(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize);
+        public void BorderEquilateralTriangle(Vector2 center, float radius, Gradient g, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawEquilateralTriangle(center, radius, Color.Transparent, g, thickness, rounded, rotation, aaSize, dash);
         }
-        public void BorderEquilateralTriangle(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f) {
-            DrawEquilateralTriangle(center, radius, Color.Transparent, c, thickness, rounded, rotation, aaSize);
+        public void BorderEquilateralTriangle(Vector2 center, float radius, Color c, float thickness = 1f, float rounded = 0f, float rotation = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawEquilateralTriangle(center, radius, Color.Transparent, c, thickness, rounded, rotation, aaSize, dash);
+        }
+        private void DrawDashedEquilateralTriangle(Vector2 center, float apothem, Gradient fill, Gradient border, float thickness, float rounded, float rotation, float aaSize, DashPattern dash) {
+            if (dash.Period <= 0f || dash.DashLength <= 0f || apothem <= 0f) return;
+            rounded = MathF.Max(MathF.Min(rounded, apothem), 0f);
+            float halfT = thickness * 0.5f;
+
+            if (fill.IsLocal) GradientToWorld(ref fill, center, Vector2.Zero, rotation);
+            fill.IsLocal = false;
+            if (border.IsLocal) GradientToWorld(ref border, center, Vector2.Zero, rotation);
+            border.IsLocal = false;
+
+            // Inner fill
+            float innerApothem = MathF.Max(apothem - thickness, 0f);
+            if (innerApothem > 0f) {
+                float innerRounded = MathF.Max(rounded - thickness, 0f);
+                DrawEquilateralTriangle(center, innerApothem, fill, fill, 0f, innerRounded, rotation, aaSize, dash: null);
+            }
+
+            // Apex-down equilateral triangle (matching DrawEquilateralTriangle's
+            // bounding box: incircle above center, circumcircle below). Walking
+            // v0 → v1 → v2 (apex → top-left → top-right) is visual-CW; outward
+            // perp = (dy, -dx).
+            float sqrt3 = MathF.Sqrt(3f);
+            Vector2 v0 = center + new Vector2(0f, 2f * apothem);
+            Vector2 v1 = center + new Vector2(-apothem * sqrt3, -apothem);
+            Vector2 v2 = center + new Vector2(apothem * sqrt3, -apothem);
+
+            // Shrunken vertices (corner arc centers) — scale toward incenter (= center).
+            float shrinkRatio = (apothem - rounded) / apothem;
+            Vector2 v0S = center + (v0 - center) * shrinkRatio;
+            Vector2 v1S = center + (v1 - center) * shrinkRatio;
+            Vector2 v2S = center + (v2 - center) * shrinkRatio;
+            Vector2[] vertsShrunk = { v0S, v1S, v2S };
+
+            // Build edge data for the 3 edges (v0→v1, v1→v2, v2→v0).
+            float sideEff = 2f * sqrt3 * (apothem - rounded);
+            float cornerArc = rounded * 2f * MathF.PI / 3f;
+            float perimeter = 3f * sideEff + 3f * cornerArc;
+            if (perimeter <= 0f) return;
+
+            float ringRadius = MathF.Max(rounded - halfT, 0f);
+
+            Vector2[] edgeStarts = new Vector2[3];
+            Vector2[] edgeDirs = new Vector2[3];
+            Vector2[] inwardPerps = new Vector2[3];
+            float[] outwardAngles = new float[3];
+            for (int i = 0; i < 3; i++) {
+                Vector2 vs = vertsShrunk[i];
+                Vector2 ve = vertsShrunk[(i + 1) % 3];
+                Vector2 d = ve - vs;
+                float len = d.Length();
+                if (len <= 0f) return;
+                d /= len;
+                edgeDirs[i] = d;
+                Vector2 outwardPerp = new(d.Y, -d.X);
+                inwardPerps[i] = -outwardPerp;
+                edgeStarts[i] = vs + outwardPerp * rounded;
+                outwardAngles[i] = MathF.Atan2(outwardPerp.Y, outwardPerp.X);
+            }
+
+            float dashLen = dash.DashLength;
+            float gapLen = dash.GapLength;
+            float period = dash.Period;
+            if (dash.FitToPath && perimeter > 0f) {
+                int n = Math.Max(1, (int)MathF.Round(perimeter / period));
+                float scale = perimeter / (n * period);
+                dashLen *= scale;
+                gapLen *= scale;
+                period *= scale;
+            }
+
+            float t = -dash.PhaseOffset;
+            t = ((t % period) + period) % period;
+            t -= period;
+
+            while (t < perimeter) {
+                float dashStart = MathF.Max(t, 0f);
+                float dashEnd = MathF.Min(t + dashLen, perimeter);
+                if (dashEnd > dashStart) {
+                    float segOff = 0f;
+                    for (int i = 0; i < 3; i++) {
+                        EmitStripDash(dashStart, dashEnd, segOff, sideEff,
+                            edgeStarts[i], edgeDirs[i], inwardPerps[i],
+                            thickness, border, center, rotation, aaSize);
+                        segOff += sideEff;
+
+                        if (rounded > 0f) {
+                            int next = (i + 1) % 3;
+                            EmitArcDash(dashStart, dashEnd, segOff, cornerArc,
+                                vertsShrunk[next], outwardAngles[i], outwardAngles[next],
+                                ringRadius, thickness,
+                                border, center, rotation, aaSize);
+                        }
+                        segOff += cornerArc;
+                    }
+                }
+                t += period;
+            }
         }
 
-        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
+        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Gradient border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            if (dash != null && thickness > 0f) {
+                DrawDashedTriangle(a, b, c, fill, border, thickness, rounded, aaSize, dash.Value);
+                return;
+            }
             EnsureSizeOrDouble(ref _vertices, _vertexCount + 4);
             _indicesChanged = EnsureSizeOrDouble(ref _indices, _indexCount + 6) || _indicesChanged;
 
@@ -417,14 +871,14 @@ namespace Apos.Shapes {
             _vertexCount += 4;
             _indexCount += 6;
         }
-        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Color border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
-            DrawTriangle(a, b, c, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, aaSize);
+        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Color border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawTriangle(a, b, c, fill, new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, aaSize, dash);
         }
-        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Color fill, Gradient border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
-            DrawTriangle(a, b, c, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, aaSize);
+        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Color fill, Gradient border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawTriangle(a, b, c, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), border, thickness, rounded, aaSize, dash);
         }
-        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Color fill, Color border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
-            DrawTriangle(a, b, c, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, aaSize);
+        public void DrawTriangle(Vector2 a, Vector2 b, Vector2 c, Color fill, Color border, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawTriangle(a, b, c, new Gradient(Vector2.Zero, fill, Vector2.Zero, fill, Gradient.Shape.None), new Gradient(Vector2.Zero, border, Vector2.Zero, border, Gradient.Shape.None), thickness, rounded, aaSize, dash);
         }
         public void FillTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient g, float rounded = 0f, float aaSize = 1.5f) {
             DrawTriangle(a, b, c, g, g, 0f, rounded, aaSize);
@@ -432,11 +886,143 @@ namespace Apos.Shapes {
         public void FillTriangle(Vector2 a, Vector2 b, Vector2 c, Color c1, float rounded = 0f, float aaSize = 1.5f) {
             DrawTriangle(a, b, c, c1, c1, 0f, rounded, aaSize);
         }
-        public void BorderTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient g, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
-            DrawTriangle(a, b, c, Color.Transparent, g, thickness, rounded, aaSize);
+        public void BorderTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient g, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawTriangle(a, b, c, Color.Transparent, g, thickness, rounded, aaSize, dash);
         }
-        public void BorderTriangle(Vector2 a, Vector2 b, Vector2 c, Color c1, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f) {
-            DrawTriangle(a, b, c, Color.Transparent, c1, thickness, rounded, aaSize);
+        public void BorderTriangle(Vector2 a, Vector2 b, Vector2 c, Color c1, float thickness = 1f, float rounded = 0f, float aaSize = 1.5f, DashPattern? dash = null) {
+            DrawTriangle(a, b, c, Color.Transparent, c1, thickness, rounded, aaSize, dash);
+        }
+        private void DrawDashedTriangle(Vector2 a, Vector2 b, Vector2 c, Gradient fill, Gradient border, float thickness, float rounded, float aaSize, DashPattern dash) {
+            if (dash.Period <= 0f || dash.DashLength <= 0f) return;
+
+            // Force visual-CW winding (in screen y-down) so the inward perpendicular
+            // formula and corner sweep direction match the rectangle and hexagon.
+            float winding = (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
+            if (winding < 0f) {
+                (b, c) = (c, b);
+            } else if (winding == 0f) {
+                return; // degenerate triangle
+            }
+
+            float sideAB = Vector2.Distance(a, b);
+            float sideBC = Vector2.Distance(b, c);
+            float sideCA = Vector2.Distance(c, a);
+            if (sideAB <= 0f || sideBC <= 0f || sideCA <= 0f) return;
+
+            float perimSum = sideAB + sideBC + sideCA;
+            Vector2 inCenter = new(
+                (sideBC * a.X + sideCA * b.X + sideAB * c.X) / perimSum,
+                (sideBC * a.Y + sideCA * b.Y + sideAB * c.Y) / perimSum);
+
+            float inRadius = MathF.Sqrt(
+                (-sideBC + sideCA + sideAB) *
+                (sideBC - sideCA + sideAB) *
+                (sideBC + sideCA - sideAB) / perimSum) / 2f;
+            rounded = MathF.Max(MathF.Min(rounded, inRadius * 0.999f), 0f);
+            float halfT = thickness * 0.5f;
+
+            float gradRotation = MathF.Atan2(b.Y - a.Y, b.X - a.X);
+            if (fill.IsLocal) GradientToWorld(ref fill, a, Vector2.Zero, gradRotation);
+            fill.IsLocal = false;
+            if (border.IsLocal) GradientToWorld(ref border, a, Vector2.Zero, gradRotation);
+            border.IsLocal = false;
+
+            // Inner fill: scale vertices toward the incenter so the inner triangle's
+            // edges are perpendicular distance `thickness` inside the original edges.
+            float fillRatio = MathF.Max((inRadius - thickness) / inRadius, 0f);
+            if (fillRatio > 0f) {
+                Vector2 aF = inCenter + fillRatio * (a - inCenter);
+                Vector2 bF = inCenter + fillRatio * (b - inCenter);
+                Vector2 cF = inCenter + fillRatio * (c - inCenter);
+                float innerRounded = MathF.Max(rounded - thickness, 0f);
+                DrawTriangle(aF, bF, cF, fill, fill, 0f, innerRounded, aaSize, dash: null);
+            }
+
+            // Shrunken triangle: vertices scaled toward incenter so each edge is
+            // `rounded` perpendicular distance inside the original edge. The
+            // shrunken vertices are the corner arc centers.
+            float shrinkRatio = (inRadius - rounded) / inRadius;
+            Vector2 aS = inCenter + shrinkRatio * (a - inCenter);
+            Vector2 bS = inCenter + shrinkRatio * (b - inCenter);
+            Vector2 cS = inCenter + shrinkRatio * (c - inCenter);
+            Vector2[] vertsShrunk = { aS, bS, cS };
+
+            // Build edge data
+            Vector2[] edgeStarts = new Vector2[3];
+            Vector2[] edgeDirs = new Vector2[3];
+            Vector2[] inwardPerps = new Vector2[3];
+            float[] outwardAngles = new float[3];
+            float[] edgeLengths = new float[3];
+            for (int i = 0; i < 3; i++) {
+                Vector2 vs = vertsShrunk[i];
+                Vector2 ve = vertsShrunk[(i + 1) % 3];
+                Vector2 d = ve - vs;
+                float len = d.Length();
+                if (len <= 0f) return;
+                d /= len;
+                edgeDirs[i] = d;
+                Vector2 outwardPerp = new(d.Y, -d.X);
+                inwardPerps[i] = -outwardPerp;
+                edgeStarts[i] = vs + outwardPerp * rounded;
+                Vector2 edgeEnd = ve + outwardPerp * rounded;
+                edgeLengths[i] = (edgeEnd - edgeStarts[i]).Length();
+                outwardAngles[i] = MathF.Atan2(outwardPerp.Y, outwardPerp.X);
+            }
+
+            // Corner arc lengths (per vertex)
+            float[] cornerArcLens = new float[3];
+            for (int i = 0; i < 3; i++) {
+                int next = (i + 1) % 3;
+                float delta = outwardAngles[next] - outwardAngles[i];
+                while (delta > MathF.PI) delta -= 2f * MathF.PI;
+                while (delta < -MathF.PI) delta += 2f * MathF.PI;
+                cornerArcLens[i] = rounded * MathF.Abs(delta);
+            }
+
+            float perimeter = 0f;
+            for (int i = 0; i < 3; i++) perimeter += edgeLengths[i] + cornerArcLens[i];
+            if (perimeter <= 0f) return;
+
+            float ringRadius = MathF.Max(rounded - halfT, 0f);
+
+            float dashLen = dash.DashLength;
+            float gapLen = dash.GapLength;
+            float period = dash.Period;
+            if (dash.FitToPath && perimeter > 0f) {
+                int n = Math.Max(1, (int)MathF.Round(perimeter / period));
+                float scale = perimeter / (n * period);
+                dashLen *= scale;
+                gapLen *= scale;
+                period *= scale;
+            }
+
+            float t = -dash.PhaseOffset;
+            t = ((t % period) + period) % period;
+            t -= period;
+
+            while (t < perimeter) {
+                float dashStart = MathF.Max(t, 0f);
+                float dashEnd = MathF.Min(t + dashLen, perimeter);
+                if (dashEnd > dashStart) {
+                    float segOff = 0f;
+                    for (int i = 0; i < 3; i++) {
+                        EmitStripDash(dashStart, dashEnd, segOff, edgeLengths[i],
+                            edgeStarts[i], edgeDirs[i], inwardPerps[i],
+                            thickness, border, Vector2.Zero, 0f, aaSize);
+                        segOff += edgeLengths[i];
+
+                        if (rounded > 0f && cornerArcLens[i] > 0f) {
+                            int next = (i + 1) % 3;
+                            EmitArcDash(dashStart, dashEnd, segOff, cornerArcLens[i],
+                                vertsShrunk[next], outwardAngles[i], outwardAngles[next],
+                                ringRadius, thickness,
+                                border, Vector2.Zero, 0f, aaSize);
+                        }
+                        segOff += cornerArcLens[i];
+                    }
+                }
+                t += period;
+            }
         }
 
         public void DrawEllipse(Vector2 center, float radius1, float radius2, Gradient fill, Gradient border, float thickness = 1f, float rotation = 0f, float aaSize = 1.5f) {
