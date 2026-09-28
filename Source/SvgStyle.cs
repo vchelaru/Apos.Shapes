@@ -11,7 +11,10 @@ namespace Apos.Shapes {
     // element, which beats the presentation attribute of the same name. That's the CSS order,
     // and it's what decides which of two conflicting fills an element gets.
     internal sealed class SvgAttrs {
-        internal SvgAttrs(XmlReader reader, SvgSheet? sheet) {
+        internal SvgAttrs(XmlReader reader, SvgSheet? sheet, SvgAttrs? parent, SvgAttrs? previous) {
+            Tag = reader.LocalName;
+            Parent = parent;
+            Previous = previous;
             if (reader.HasAttributes) {
                 _own = new Dictionary<string, string>(StringComparer.Ordinal);
                 reader.MoveToFirstAttribute();
@@ -24,15 +27,22 @@ namespace Apos.Shapes {
                 reader.MoveToElement();
             }
 
-            if (sheet != null && !sheet.IsEmpty) {
-                _sheet = sheet.Match(reader.LocalName, Raw("id"), Raw("class"));
-            }
+            string? classes = Raw("class");
+            if (classes != null) Classes = classes.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+
+            if (sheet != null && !sheet.IsEmpty) _sheet = sheet.Match(this);
 
             string? style = Raw("style");
             if (style == null || style.Length == 0) return;
             _style = new Dictionary<string, string>(StringComparer.Ordinal);
             SvgSheet.Declarations(style, _style);
         }
+
+        // Where the element sits, which is what a selector with combinators is matched against.
+        internal readonly string Tag;
+        internal readonly SvgAttrs? Parent;
+        internal readonly SvgAttrs? Previous;
+        internal readonly string[] Classes = Array.Empty<string>();
 
         private readonly Dictionary<string, string>? _own;
         private readonly Dictionary<string, string>? _sheet;

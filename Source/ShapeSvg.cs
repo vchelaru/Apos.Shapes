@@ -18,9 +18,10 @@ namespace Apos.Shapes {
     /// What it reads: `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon` and `g`,
     /// with transforms, fills, strokes, and linear and radial gradients out of `defs`. Styles
     /// come from presentation attributes, `style` attributes and `style` elements, where a rule
-    /// may select by tag, class and id. Text, `use`, clip paths, masks, filters and patterns are
-    /// ignored. Anything ignored is counted rather than reported, so a file always loads if it
-    /// parses as XML.
+    /// may select by tag, class, id, attribute and `:first-child`, with descendant, child and
+    /// sibling combinators, inside `@media` for all or screen. Text, `use`, clip paths, masks,
+    /// filters and patterns are ignored. Anything ignored is counted rather than reported, so a
+    /// file always loads if it parses as XML.
     ///
     /// Sizes are in em units: one em is the height of the viewBox, so multiply by the height you
     /// draw at to get world units. Everything here is safe to call from any thread.
@@ -253,6 +254,10 @@ namespace Apos.Shapes {
             internal bool Ignore;
             internal bool Defs;
             internal SvgGradientDef? Grad;
+            // This element, and the last child element read so far, for selectors that look at
+            // ancestors and earlier siblings.
+            internal SvgAttrs? Node;
+            internal SvgAttrs? LastChild;
         }
 
         private void Parse(XmlReader r, SvgSheet? sheet, float tolerance) {
@@ -286,7 +291,12 @@ namespace Apos.Shapes {
 
                 if (!parent.Ignore) {
                     string name = r.LocalName;
-                    var attrs = new SvgAttrs(r, sheet);
+                    var attrs = new SvgAttrs(r, sheet, parent.Node, parent.LastChild);
+                    frame.Node = attrs;
+                    if (stack.Count > 0) {
+                        parent.LastChild = attrs;
+                        stack[stack.Count - 1] = parent;
+                    }
                     switch (name) {
                         case "svg":
                             if (!sawRoot) {
