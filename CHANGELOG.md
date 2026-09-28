@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
-- Nothing yet!
+### Added
+
+- SVG `<style>` elements: rules selecting by tag, class, id, or those combined (`path.a#b`) now style the drawing, below inline `style=""` and above presentation attributes. Other selectors and at-rules are skipped.
 
 ## [0.8.5] - 2026-09-07
 
